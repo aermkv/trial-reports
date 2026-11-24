@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trial Reports</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://use.typekit.net/mhf1zre.css" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div id="auth-gate" class="auth-gate">
+  <div class="auth-card">
+    <div class="auth-brand-block">
+      <img src="assets/gardian-black.svg" alt="Gardian" class="auth-logo" />
+      <h1 class="auth-title">Trial Reports</h1>
+      <p id="auth-copy" class="auth-copy">Sign in to continue.</p>
+    </div>
+    <form id="auth-form" class="auth-form">
+      <input id="auth-email" type="email" placeholder="you@company.com" required />
+      <button type="submit" id="auth-submit" class="btn-outline">Send Code</button>
+    </form>
+    <div id="auth-alt" class="auth-alt">
+      <div class="auth-divider"><span>or</span></div>
+      <button type="button" id="auth-microsoft" class="btn-outline auth-microsoft">
+        <svg viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+        <span>Sign in with Microsoft</span>
+      </button>
+    </div>
+    <form id="auth-code-form" class="auth-form" hidden>
+      <input id="auth-code" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="code" required />
+      <button type="submit" id="auth-verify" class="btn-outline">Verify Code</button>
+    </form>
+    <div id="demo-users" class="demo-users" hidden></div>
+    <button type="button" id="auth-back" class="auth-back" hidden>Use a different email</button>
+    <p id="auth-status" class="auth-status" hidden></p>
+  </div>
+</div>
+
+<!-- Reports list (LDT Documents view) -->
+<div id="list-view" hidden>
+  <div class="docs-page">
+    <div class="docs-header-row">
+      <button type="button" class="docs-logo-btn" data-go="list" aria-label="Trial Reports"><img src="assets/gardian-black.svg" alt="Gardian" class="docs-logo" /></button>
+      <div class="menu-mount"></div>
+    </div>
+    <h1 class="docs-title">Trial Reports</h1>
+    <div class="docs-actions-row">
+      <button type="button" id="btn-new" class="btn-outline-sm docs-new-btn"><span class="docs-new-plus">+</span> New Trial Report</button>
+      <div class="right">
+        <select id="list-filter" class="docs-filter" aria-label="Filter by status">
+          <option value="open">Open reports</option>
+          <option value="all">All reports</option>
+          <option value="draft">Drafts</option>
+          <option value="review">In review</option>
+          <option value="approved">Approved</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <input id="list-search" type="text" class="docs-search" placeholder="search" />
+      </div>
+    </div>
+    <div class="docs-table">
+      <div class="docs-table-header">
+        <span class="docs-col docs-col-title">Report Title</span>
+        <span class="docs-col docs-col-trials">Trial Numbers</span>
+        <span class="docs-col docs-col-lines">Lines</span>
+        <span class="docs-col docs-col-date">Request Date</span>
+        <span class="docs-col docs-col-status">Status</span>
+        <span class="docs-col docs-col-waiting">Waiting On</span>
+      </div>
+      <div id="list-rows"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Report editor (LDT editor: sidebar + sheet) -->
+<div id="editor-view" hidden>
+  <aside class="panel-left">
+    <div class="brand">
+      <button type="button" class="docs-logo-btn" data-go="list" aria-label="Back to Trial Reports"><img src="assets/gardian-black.svg" alt="Gardian" class="brand-logo" /></button>
+      <div class="menu-mount"></div>
+    </div>
+    <h1 class="title">Trial Reports</h1>
+    <div class="field-group-tight" id="side-fields"></div>
+    <div id="side-status" class="side-status"></div>
+    <p class="side-heading">Sections</p>
+    <nav class="side-nav" id="side-nav"></nav>
+  </aside>
+  <main class="panel-right">
+    <div class="load-pattern-tabs no-print" id="trial-tabs"></div>
+    <div class="sheet" id="sheet">
+      <div class="sheet-header-bar" id="sheet-header"></div>
+      <div class="sheet-body" id="sheet-body"></div>
+    </div>
+    <div class="toolbar no-print" id="toolbar"></div>
+  </main>
+</div>
+
+<!-- Users (LDT Users view) -->
+<div id="users-view" hidden>
+  <div class="docs-page">
+    <div class="docs-header-row">
+      <button type="button" class="docs-logo-btn" data-go="list" aria-label="Trial Reports"><img src="assets/gardian-black.svg" alt="Gardian" class="docs-logo" /></button>
+      <div class="menu-mount"></div>
+    </div>
+    <h1 class="docs-title">Users</h1>
+    <div class="docs-actions-row">
+      <button type="button" id="btn-user-add" class="btn-outline-sm docs-new-btn"><span class="docs-new-plus">+</span> Add User</button>
+      <input id="user-search" type="text" class="docs-search" placeholder="search" />
+    </div>
+    <div id="invite-row" class="invite-row" hidden>
+      <input id="invite-email" type="email" class="docs-search" placeholder="email address" />
+      <input id="invite-name" type="text" class="docs-search" placeholder="full name" />
+      <select id="invite-role" class="docs-filter" aria-label="Role"></select>
+      <button type="button" id="btn-invite-send" class="btn-outline-sm">Add User</button>
+      <button type="button" id="btn-invite-cancel" class="link-btn">Cancel</button>
+    </div>
+    <div class="docs-table">
+      <div class="docs-table-header">
+        <span class="docs-col docs-col-name">Name</span>
+        <span class="docs-col docs-col-email">Email</span>
+        <span class="docs-col docs-col-role">Role</span>
+        <span class="docs-col docs-col-joined">Added</span>
+      </div>
+      <div id="users-rows"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Activity panel (LDT) -->
+<div id="activity-panel" class="activity-panel no-print" hidden>
+  <div class="activity-panel-header">
+    <h2>Activity</h2>
+    <button type="button" id="btn-activity-close" class="icon-btn" aria-label="Close"><svg viewBox="0 0 16 16"><path d="M8 6.94L12.14 2.8L13.2 3.86L9.06 8L13.2 12.14L12.14 13.2L8 9.06L3.86 13.2L2.8 12.14L6.94 8L2.8 3.86L3.86 2.8L8 6.94Z" fill="currentColor"/></svg></button>
+  </div>
+  <div id="activity-list" class="comments-list"></div>
+  <form id="comment-form" class="comment-form">
+    <textarea id="comment-input" placeholder="Add a comment…" rows="2" required></textarea>
+    <button type="submit" class="btn-outline-sm">Post</button>
+  </form>
+</div>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
