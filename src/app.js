@@ -330,7 +330,7 @@ function renderBody() {
   <section class="sheet-section" id="sec-goals"><h2>Trial Goals &amp; Deliverables</h2><p class="sheet-hint">What success looks like and what will be handed over at the end.</p>
     ${ta("goals", "Trial goals / objectives", "", 4)}${ta("deliv", "Deliverables", "e.g. rolls for customer qualification, data report, process window")}${ta("crit", "Success criteria")}</section>
   <section class="sheet-section" id="sec-trials"><h2>Trials</h2><p class="sheet-hint">One trial per line run. Pick a trial with the tabs above the report. Each column in the settings table is one condition or material; "Copy" duplicates a column so you only change what differs.</p>
-    ${E.trials.map((t, i) => `<div class="trial-panel${i === E.cur ? " active" : ""}" data-panel="${i}"><h3 class="print-only">Trial ${i + 1} · ${esc(trialNo(t))} · ${esc(lineLabel(t))}</h3>${trialPanel(t, i)}</div>`).join("")}</section>
+    ${E.trials.map((t, i) => `<div class="trial-panel${i === E.cur ? " active" : ""}${t.conditions.length > 4 ? " wide" : ""}" data-panel="${i}"><h3 class="print-only">Trial ${i + 1} · ${esc(trialNo(t))} · ${esc(lineLabel(t))}</h3>${trialPanel(t, i)}</div>`).join("")}</section>
   <section class="sheet-section" id="sec-tests"><h2>Testing Required After Trial</h2><p class="sheet-hint">Each test, the conditions it applies to and who runs it.</p><div id="rep-tests">${rep("tests")}</div></section>
   <section class="sheet-section" id="sec-samples"><h2>Samples Needed</h2><p class="sheet-hint">Number and size of samples to pull from each condition.</p><div id="rep-samples">${rep("samples")}</div></section>
   <section class="sheet-section" id="sec-ships"><h2>Sample Delivery</h2><p class="sheet-hint">A recipient for every location samples must be sent to. Leave empty if samples stay on site.</p><div id="rep-ships">${rep("ships")}</div></section>
@@ -398,11 +398,13 @@ function renderTrialPanel(i) {
 function renderMatrix(i, focusEl) {
   const id = focusEl?.dataset ? `[data-c="${focusEl.dataset.c}"][data-f="${focusEl.dataset.f}"][data-ti="${i}"]` : null;
   $("mx-" + i).innerHTML = matrix(E.trials[i], i); lockIfReadonly();
+  $$(`[data-panel="${i}"]`)[0]?.classList.toggle("wide", E.trials[i].conditions.length > 4);
   if (id) document.querySelector(id)?.focus();
 }
 
 // Toolbar: Save · status/approval button · Activity · Copy · Print
 const ICON_SAVE = '<svg viewBox="0 0 18 18"><path d="M3 2h9.5L16 5.5V15a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm1.5 1.5v3.5h7V3.5h-7ZM5 10.5V14.5h8v-4H5Z" fill="currentColor"/></svg>';
+const ICON_PDF = '<svg viewBox="0 0 19.2 19.2"><g transform="translate(1.6 1.6)"><path d="M14 11V14H2V11H0V14C0 15.1 0.9 16 2 16H14C15.1 16 16 15.1 16 14V11H14ZM13 7L11.59 5.59L9 8.17V0H7V8.17L4.41 5.59L3 7L8 12L13 7Z" fill="currentColor"/></g></svg>';
 const ICON_ACT = '<svg viewBox="0 0 16 16" fill="none"><path d="M3.73 13.28l1.02-.81c.21-.17.32-.26.44-.32.11-.05.22-.09.34-.12.13-.03.27-.03.55-.03h5.79c.75 0 1.12 0 1.4-.15.25-.13.46-.33.58-.58.15-.29.15-.66.15-1.4V4.8c0-.75 0-1.12-.15-1.41a1.33 1.33 0 0 0-.58-.58c-.28-.15-.66-.15-1.4-.15H4.13c-.75 0-1.12 0-1.4.15-.25.13-.46.33-.58.58C2 3.68 2 4.05 2 4.8v7.65c0 .71 0 1.07.15 1.25.12.16.32.25.52.25.23 0 .51-.22 1.06-.67Z" stroke="currentColor" stroke-width="1.375" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const mainActions = (r) => actionsFor(r).filter((a) => a.action !== "cancel");
 function renderToolbar() {
@@ -412,11 +414,11 @@ function renderToolbar() {
   $("toolbar").innerHTML = `
     ${E.ro ? "" : `<button type="button" class="btn-outline-sm" id="btn-save">${ICON_SAVE} Save</button>`}
     <div class="menu-wrap"><button type="button" class="btn-outline-sm${acts.length ? " is-solid" : ""}" id="btn-status"${acts.length || !r.id ? "" : " disabled"}>${esc(statusBtnLabel)}</button><div class="hamburger-menu up left" id="status-menu" hidden></div></div>
+    <button type="button" class="btn-outline-sm no-demo" id="btn-print" title="Opens the print dialog. Choose Save as PDF to get a file.">${ICON_PDF} Print / PDF</button>
     <button type="button" class="btn-outline-sm" id="btn-activity"${r.id ? "" : " disabled"}>${ICON_ACT} Activity${comments ? ` (${comments})` : ""}</button>
     <div class="menu-wrap"><button type="button" class="btn-outline-sm" id="btn-more">More ▾</button><div class="hamburger-menu up" id="more-menu" hidden>
       <button type="button" class="hamburger-menu-item" data-more="text">Copy Report as Text</button>
       <button type="button" class="hamburger-menu-item" data-more="tsv">Copy Settings for Excel</button>
-      <button type="button" class="hamburger-menu-item no-demo" data-more="print">Print / Save as PDF</button>
       ${canCreate() ? `<button type="button" class="hamburger-menu-item" data-more="dup">Duplicate as New Report</button>` : ""}
       ${cancel ? `<button type="button" class="hamburger-menu-item" data-more="cancel">Cancel Report</button>` : ""}
       ${canDelete(r) ? `<button type="button" class="hamburger-menu-item" data-more="delete">Delete Report</button>` : ""}
@@ -524,7 +526,7 @@ document.addEventListener("click", async (e) => {
   else if (b.id === "btn-more") { $("more-menu").hidden = !$("more-menu").hidden; }
   else if (d.more === "text") copy(reportText(), "Report copied. Paste into email, Word or Teams.");
   else if (d.more === "tsv") copy(tsv(), "Settings copied for every trial. Paste into Excel.");
-  else if (d.more === "print") { $$(".trial-panel").forEach((p) => p.classList.add("print")); window.print(); }
+  else if (b.id === "btn-print") printReport();
   else if (d.more === "dup") { if (!(await leaveOk())) return; duplicate(); }
   else if (d.more === "delete") {
     if (!(await confirmBox("Delete this report and its history permanently? This can't be undone.", "Delete"))) return;
@@ -594,7 +596,22 @@ function tsv() {
   });
   return rows.map((r) => r.join("\t")).join("\n");
 }
-window.addEventListener("afterprint", () => $$(".trial-panel").forEach((p) => p.classList.remove("print")));
+// Print / PDF on US Letter (page size and layout are in styles.css @page).
+// Text boxes grow to fit their text first, so nothing is cut off on paper,
+// and the PDF's suggested file name is the trial numbers + title.
+function sizeTextareasForPrint() {
+  $$("#sheet-body textarea").forEach((t) => { t.style.height = "auto"; t.style.height = t.scrollHeight + 4 + "px"; });
+  $$("#sheet-body input").forEach((i) => i.classList.toggle("is-empty", !i.value));
+}
+function printReport() {
+  if (E.dirty) toast("Printing what's on screen. Unsaved changes are included but not saved.");
+  sizeTextareasForPrint();
+  const prev = document.title;
+  document.title = [E.trials.map(trialNo).join(" "), E.report.title].filter(Boolean).join(" – ") || "Trial Report";
+  window.addEventListener("afterprint", () => { document.title = prev; $$("#sheet-body textarea").forEach((t) => (t.style.height = "")); }, { once: true });
+  window.print();
+}
+window.addEventListener("beforeprint", sizeTextareasForPrint);
 
 // ───────────────────────────── Users (admin) ────────────────────────────────
 let MEMBERS = [];

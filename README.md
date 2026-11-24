@@ -41,6 +41,14 @@ The format is `LINE-INITIALS-MMDDYY-NN`, for example `TG2-JM-112426-01`.
 - **INITIALS** come from "Requested By", and **MMDDYY** is the request date.
 - **NN** is assigned by the database when the report is saved. It counts every trial requested on that date across all reports, so numbers are always unique. It is never reused, so a removed trial leaves a gap.
 
+## Printing and PDFs
+
+**Print / PDF** under the report opens the browser's print dialog, set up for US Letter (8.5 × 11 in, 0.5 in margins). Choose *Save as PDF* to get a file; its suggested name is the trial numbers and report title.
+
+- Each trial starts on a new page. A trial with more than four conditions prints on landscape Letter, so its settings table stays readable.
+- Every page has a footer with page X of Y. Text boxes grow to fit what was typed, and empty hints and date masks are left off the paper.
+- The PDF has real text, not an image, so it can be searched and copied from.
+
 ## One-time setup
 
 1. **Database.** In the Supabase SQL Editor (project `ptjzayeynuesvcjrtunb`), run `supabase/migrations/0001_trial_reports.sql`, then `0002_first_admin.sql`. The second one makes you the first admin; check the email address in it first. Both are safe to re-run.

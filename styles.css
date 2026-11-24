@@ -309,26 +309,74 @@ table.mx { border-collapse: separate; border-spacing: 0; width: 100%; font-size:
   .load-pattern-tab { min-width: 0; flex: 1 1 calc(50% - 12px); }
 }
 
-/* ---------- Print: just the sheet ---------- */
-@media print {
-  body { background: #fff; }
-  .panel-left, .toolbar, .load-pattern-tabs, .activity-panel, .no-print, .rep-del, .rep-add, .ch button, .demo-badge, .matrix-bar { display: none !important; }
-  #editor-view { display: block; height: auto; }
-  .panel-right { overflow: visible; padding: 0; }
-  .sheet { box-shadow: none; }
-  #editor-view.is-readonly .sheet-body { opacity: 1; filter: none; }
-  .mx-scroll { overflow: visible; }
-  .sheet-section { break-inside: avoid-page; }
-  .mx thead th { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-}
-
 /* One trial panel visible at a time; print shows every trial. */
 .trial-panel { display: none; }
 .trial-panel.active { display: block; }
 .print-only { display: none; }
+
+
+/* ---------- Print / PDF: US Letter ----------
+   Portrait 8.5 x 11 in with 0.5 in margins. A trial with more than four
+   conditions prints on its own landscape Letter page so its settings table
+   stays readable. Page numbers sit in the bottom margin. */
+@page { size: letter portrait; margin: 0.5in 0.5in 0.6in;
+  @bottom-left { content: "Gardian R&D Pre-Trial Report"; font: 8pt 'IBM Plex Sans', sans-serif; color: #888; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt 'IBM Plex Sans', sans-serif; color: #888; } }
+@page wide { size: letter landscape; margin: 0.5in 0.5in 0.6in; }
 @media print {
-  .trial-panel { display: block !important; margin-bottom: 18px; }
-  .print-only { display: block; margin: 12px 0 8px; font-size: 13px; }
-  .line-card:not(:has(input:checked)) { display: none; }
-  .line-cards { grid-template-columns: 1fr; }
+  html, body { background: #fff; height: auto; }
+  body { font-size: 9.5pt; }
+  #auth-gate, #list-view, #users-view, .panel-left, .toolbar, .load-pattern-tabs, .activity-panel, .no-print, .toasts, .demo-badge,
+  .rep-del, .rep-add, .rep-empty, .ch button, .matrix-bar, .sheet-hint { display: none !important; }
+  #editor-view { display: block !important; height: auto; }
+  .panel-right { display: block; overflow: visible; padding: 0; }
+  .panel-right > * { max-width: none; }
+  .sheet { box-shadow: none; }
+  .sheet-header-bar { padding: 0; grid-template-columns: 2.2fr 1.1fr 1.9fr 1.3fr .9fr; column-gap: 10px; }
+  .sheet-header-bar .v { font-size: 10pt; white-space: normal; }
+  .sheet-header-bar .v.title-v { font-size: 13pt; }
+  .sheet-header-bar .l { font-size: 7pt; }
+  .sheet-body { padding: 0; }
+  .sheet-section { padding: 12pt 0 4pt; break-inside: auto; }
+  .sheet-section > h2 { font-size: 10pt; margin-bottom: 6pt; break-after: avoid; }
+  .sheet-label, .field label { font-size: 8pt; }
+  .sheet-block, .sheet-grid { margin-bottom: 8pt; break-inside: avoid; }
+  .sheet-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6pt 16pt; }
+  .field { min-height: 16pt; border-bottom-width: 1px; }
+  .field input, .field select { font-size: 9pt; }
+  :is(input, select, textarea) { color: var(--ink) !important; -webkit-text-fill-color: var(--ink); opacity: 1 !important; appearance: none; -webkit-appearance: none; background: transparent !important; }
+  .sheet-textarea { border-width: 1px; font-size: 9pt; min-height: 0; padding: 4pt 6pt; resize: none; overflow: hidden; }
+  .trial-panel { display: block !important; break-before: page; }
+  .trial-panel.wide { page: wide; }
+  .print-only { display: block; margin: 0 0 6pt; font-size: 11pt; font-weight: 700; }
+  .line-cards { display: block; margin-bottom: 6pt; }
+  .line-card { display: none; }
+  .line-card:has(input:checked) { display: flex; align-items: center; gap: 12pt; padding: 4pt 8pt !important; border-width: 1px !important; background: #fff; }
+  .line-card:has(input:checked) svg { width: 1.8in; margin: 0; }
+  .check-mark { display: none !important; }
+  .mx-scroll { overflow: visible; border-width: 1px; }
+  table.mx { font-size: 7.5pt; table-layout: auto; }
+  .mx th, .mx td { padding: 1.5pt 4pt; }
+  .mx .pl { position: static; min-width: 0; width: 1.6in; }
+  .mx thead th { position: static; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .mx tr.gr th { print-color-adjust: exact; -webkit-print-color-adjust: exact; padding-top: 3pt; }
+  .mx tr.gr th span { position: static; }
+  .mx td input, .mx td select { min-width: 0; width: 100%; height: auto; border: none !important; font-size: 7.5pt; padding: 0; }
+  .mx tr { break-inside: avoid; }
+  .mx thead { display: table-header-group; }
+  .rep-row { padding: 6pt 8pt; gap: 4pt 14pt; break-inside: avoid; border-width: 1px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .disp { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4pt; }
+  .disp label { padding: 3pt 6pt; font-size: 8pt; border-width: 1px; }
+  .disp label:not(:has(input:checked)) { color: #888; border-color: #ccc; }
+  .disp label:has(input:checked) { padding: 3pt 6pt; }
+  .signs { grid-template-columns: 1fr 1fr; gap: 10pt; break-inside: avoid; }
+  .sign-card { padding: 8pt 10pt; border-width: 1px; }
+  .sign-card .sig { font-size: 13pt; }
+  #sec-sign { break-inside: avoid; }
+  /* Paper shows only what was filled in: no hint text, no empty date masks. */
+  ::placeholder { color: transparent !important; -webkit-text-fill-color: transparent !important; }
+  input[type=date]::-webkit-calendar-picker-indicator { display: none; }
+  input.is-empty, input.is-empty::-webkit-datetime-edit { color: transparent !important; -webkit-text-fill-color: transparent !important; }
+  #sec-trials > h2 { display: none; }
+  #sec-trials { padding: 0; border: 0; }
 }
