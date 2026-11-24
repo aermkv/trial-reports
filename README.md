@@ -66,7 +66,7 @@ The format is `LINE-INITIALS-MMDDYY-NN`, for example `TG2-JM-112426-01`.
    ```
    supabase functions deploy trial-notify trial-invite --project-ref ptjzayeynuesvcjrtunb
    ```
-   They use the project's existing `RESEND_API_KEY` secret. The sender is `notifications@notifications.gardian.com` unless you set a `TRIAL_EMAIL_FROM` secret.
+   They use the project's existing `RESEND_API_KEY` and `FROM_EMAIL` secrets (the same as the Load Diagram Tool). To give Trial Reports its own sender, add a `TRIAL_EMAIL_FROM` secret.
 3. **Sign-in redirect.** In Supabase, go to Authentication → URL Configuration and add `https://aermkv.github.io/trial-reports/` to Redirect URLs. Microsoft sign-in and email links need it.
 4. **Hosting.** Create the GitHub repo `aermkv/trial-reports`, push this folder and turn on GitHub Pages (main branch, root).
 5. **People.** Sign in, open Menu → Users and add people with a role. Anyone who already uses the Load Diagram Tool is added straight away with their existing account. Anyone new gets a Supabase invitation email.

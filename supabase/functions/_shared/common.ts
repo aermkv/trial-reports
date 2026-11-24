@@ -29,7 +29,9 @@ export async function sendEmail(to: string[], subject: string, html: string) {
   if (!to.length) return;
   const key = Deno.env.get("RESEND_API_KEY");
   if (!key) throw new Error("RESEND_API_KEY is not set");
-  const from = Deno.env.get("TRIAL_EMAIL_FROM") || "Gardian Trial Reports <notifications@notifications.gardian.com>";
+  // Same sender as the Load Diagram Tool (its FROM_EMAIL secret), unless
+  // TRIAL_EMAIL_FROM is set to give Trial Reports its own address.
+  const from = Deno.env.get("TRIAL_EMAIL_FROM") || Deno.env.get("FROM_EMAIL") || "Gardian Trial Reports <notifications@notifications.gardian.com>";
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
