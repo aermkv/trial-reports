@@ -51,13 +51,15 @@
     <div class="docs-actions-row">
       <button type="button" id="btn-new" class="btn-outline-sm docs-new-btn"><span class="docs-new-plus">+</span> New Trial Report</button>
       <div class="right">
-        <select id="list-filter" class="docs-filter" aria-label="Filter by status">
+        <select id="list-filter" class="docs-filter" aria-label="Filter by step">
           <option value="open">Open reports</option>
           <option value="all">All reports</option>
-          <option value="draft">Drafts</option>
-          <option value="review">In review</option>
-          <option value="approved">Approved</option>
-          <option value="completed">Completed</option>
+          <option value="draft">Draft</option>
+          <option value="settings">Settings Entry</option>
+          <option value="review">Director reviews</option>
+          <option value="floor">Scheduling / Execution</option>
+          <option value="testing">Testing</option>
+          <option value="closed">Closed</option>
           <option value="cancelled">Cancelled</option>
         </select>
         <input id="list-search" type="text" class="docs-search" placeholder="search" />
@@ -87,6 +89,8 @@
     <h1 class="title">Trial Reports</h1>
     <div class="field-group-tight" id="side-fields"></div>
     <div id="side-status" class="side-status"></div>
+    <p class="side-heading">Route</p>
+    <ol class="side-route" id="side-route"></ol>
     <p class="side-heading">Sections</p>
     <nav class="side-nav" id="side-nav"></nav>
   </aside>

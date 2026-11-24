@@ -4,6 +4,7 @@
 // one status button that turns into the approval menu, an Activity panel.
 import { LINES, ART, DISP, REP, groupsOf, shown, letter, lineCode, lineLabel, lineShort } from "./lines.js";
 import { LOAD_DIAGRAM_TOOL_URL } from "./config.js";
+import { STEPS, STEP, stepNo, prevStep, OPEN, FILL, isOwner, editableSections } from "./route.js";
 
 const params = new URLSearchParams(location.search);
 const DEMO = window.TR_DEMO === true || params.get("demo") === "1";
@@ -20,15 +21,12 @@ const mmddyy = (d) => (d ? d.slice(5, 7) + d.slice(8, 10) + d.slice(2, 4) : "???
 const pad = (n) => String(n).padStart(2, "0");
 
 export const ROLE_LABELS = {
-  requester: "Requester", engineer: "R&D Engineer", tech_director: "Director of Technology",
-  ops_director: "Director of Operations", admin: "Admin", spectator: "Spectator",
+  requester: "R&D (Trial Requester)", engineer: "Engineering", ops_director: "Director of Operations",
+  tech_director: "Director of Technology", plant_manager: "Plant Manager", admin: "Admin", spectator: "Spectator",
 };
-const STATUS_LABELS = {
-  draft: "Draft", tech_review: "Pending Technology Approval", ops_review: "Pending Operations Approval",
-  approved: "Approved", completed: "Completed", cancelled: "Cancelled",
-};
-const statusLabel = (r) => (r.status === "draft" && r.last_action === "send_back" ? "Sent Back" : r.status === "draft" && r.last_action === "reopen" ? "Reopened" : r.status === "draft" && r.last_action === "recall" ? "Recalled" : STATUS_LABELS[r.status] || r.status);
-const waitingOn = (r) => ({ draft: r.requester_name || "Author", tech_review: "Director of Technology", ops_review: "Director of Operations", approved: "R&D (run trial)" }[r.status] || "");
+const STATUS_LABELS = { ...Object.fromEntries(STEPS.map((x) => [x.key, x.name])), cancelled: "Cancelled" };
+const statusLabel = (r) => (r.last_action === "send_back" && OPEN.includes(r.status) ? "Sent Back · " : "") + (STATUS_LABELS[r.status] || r.status);
+const waitingOn = (r) => (r.status === "draft" ? r.requester_name || "Trial Requester" : r.status === "testing" ? "R&D" : OPEN.includes(r.status) ? STEP[r.status].owner : "");
 
 let me = null;
 
@@ -174,40 +172,35 @@ function initAuth() {
 }
 
 // ───────────────────────────── permissions (mirror the database) ─────────────
-const canCreate = () => ["requester", "engineer", "tech_director", "ops_director", "admin"].includes(me?.role);
+const canCreate = () => ["requester", "engineer", "tech_director", "ops_director", "plant_manager", "admin"].includes(me?.role);
 const isMine = (r) => r.created_by === me.id;
-const canEdit = (r) => !r.id ? canCreate() : r.status === "draft" && !!me.role && me.role !== "spectator" && (isMine(r) || ["engineer", "admin"].includes(me.role));
-const canComment = (r) => !!me.role && !(me.role === "requester" && !isMine(r));
+const canEdit = (r) => (!r.id ? canCreate() : FILL.includes(r.status) && isOwner(r, me));
+const canComment = () => !!me.role;
 const canDelete = (r) => r.id && (me.role === "admin" || (isMine(r) && r.status === "draft" && !r.submitted_at));
+// The current step's owner hands off (or approves) and can send back.
 function actionsFor(r) {
-  const a = [], ro = me.role, mine = isMine(r);
-  if (!r.id) return a;
-  if (r.status === "draft" && canEdit(r)) a.push({ action: "submit", label: r.last_action === "send_back" ? "Resubmit for Approval" : "Submit for Approval", msg: "Send this report to the Director of Technology for approval? It can't be edited while it's in review." });
-  if (r.status === "tech_review" && ["tech_director", "admin"].includes(ro)) {
-    a.push({ action: "approve", label: "Approve", msg: "Approve this trial plan and send it to the Director of Operations?" });
-    a.push({ action: "approve", label: "Approve with Comments", comment: "required", msg: "Approve with comments. They go into the Activity log and the sign-off." });
-    a.push({ action: "send_back", label: "Send Back with Comments", comment: "required", msg: "Send the report back to its author. Say what needs to change." });
+  const a = [];
+  if (!r.id || !OPEN.includes(r.status)) return a;
+  const st = STEP[r.status];
+  if (isOwner(r, me)) {
+    const nxt = STEPS[st.n];
+    a.push({ action: "advance", label: st.advance, comment: "optional",
+      msg: r.status === "testing"
+        ? "Close the report and send the after-trial package to the Director of Technology, the engineer who ran the trial, the Plant Manager and the Director of Operations?"
+        : `Complete ${st.name.toLowerCase()} and send the report to ${nxt.key === "testing" ? "R&D" : nxt.owner}?` });
+    if (st.approval) a.push({ action: "advance", label: "Approve with Comments", comment: "required", msg: "Approve with comments. They go into the Activity log and the sign-off." });
+    const prev = prevStep(r.status);
+    if (prev) {
+      const prevOwner = prev === "draft" ? "the requester" : STEP[prev].owner;
+      a.push({ action: "send_back", target: "previous", label: `Send Back to ${prev === "draft" ? "Requester" : STEP[prev].owner}`, comment: "required", msg: `Send the report back to ${prevOwner} (${STEP[prev].name}). Say what needs to change.` });
+      if (prev !== "draft") a.push({ action: "send_back", target: "requester", label: "Send Back to Requester", comment: "required", msg: "Send the report straight back to the requester as a draft. Every sign-off after the draft is cleared. Say what needs to change." });
+    }
   }
-  if (r.status === "ops_review" && ["ops_director", "admin"].includes(ro)) {
-    a.push({ action: "approve", label: "Approve (final)", msg: "Give final approval? The trial is then ready to run." });
-    a.push({ action: "approve", label: "Approve with Comments", comment: "required", msg: "Give final approval with comments." });
-    a.push({ action: "send_back", label: "Send Back to Technology", comment: "required", msg: "Send the report back to the Director of Technology. Say what needs to change." });
-  }
-  if ((r.status === "tech_review" && (mine || ["engineer", "admin"].includes(ro))) || (r.status === "ops_review" && ["tech_director", "admin"].includes(ro)))
-    a.push({ action: "recall", label: "Recall Submission", msg: "Pull this report back while it's still waiting on the next person?" });
-  if (r.status === "approved" && (mine || ["engineer", "admin"].includes(ro))) a.push({ action: "complete", label: "Mark Trial Completed", comment: "optional", msg: "Mark the trial as run and completed. Add any notes on how it went." });
-  if (r.status === "approved" && ["tech_director", "admin"].includes(ro)) a.push({ action: "reopen", label: "Reopen for Edits", comment: "required", msg: "Reopen this approved report for edits? Both sign-offs are cleared and it goes through approval again." });
-  if (["draft", "tech_review", "ops_review"].includes(r.status) && (mine || ro === "admin")) a.push({ action: "cancel", label: "Cancel Report", comment: "optional", msg: "Cancel this report? It stays in the list as Cancelled, with its history." });
+  if (isMine(r) || me.role === "admin") a.push({ action: "cancel", label: "Cancel Report", comment: "optional", msg: "Cancel this report? It stays in the list as Cancelled, with its history." });
   return a;
 }
-function needsAttention(r) {
-  if (!me?.role) return false;
-  if (r.status === "draft" && ["send_back", "reopen"].includes(r.last_action) && (isMine(r) || me.role === "engineer")) return true;
-  if (r.status === "tech_review" && me.role === "tech_director") return true;
-  if (r.status === "ops_review" && me.role === "ops_director") return true;
-  if (r.status === "approved" && (isMine(r) || me.role === "engineer")) return true;
-  return false;
-}
+// Highlighted in the list when it's your step (admins: only reports they wrote).
+function needsAttention(r) { return isOwner(r, me, { includeAdmin: false }) || (me.role === "admin" && isMine(r) && ["draft", "testing"].includes(r.status)); }
 
 // ───────────────────────────── Reports list ─────────────────────────────────
 let LIST = [];
@@ -223,9 +216,10 @@ async function showList() {
 function renderList() {
   const q = $("list-search").value.trim().toLowerCase(), f = $("list-filter").value;
   const match = (r) => {
-    if (f === "open" && ["completed", "cancelled"].includes(r.status)) return false;
-    if (f === "review" && !["tech_review", "ops_review"].includes(r.status)) return false;
-    if (!["all", "open", "review"].includes(f) && r.status !== f) return false;
+    if (f === "open" && !OPEN.includes(r.status)) return false;
+    if (f === "review" && !["ops_review", "tech_review"].includes(r.status)) return false;
+    if (f === "floor" && !["scheduling", "execution"].includes(r.status)) return false;
+    if (!["all", "open", "review", "floor"].includes(f) && r.status !== f) return false;
     if (!q) return true;
     return [r.title, r.requester_name, r.project, statusLabel(r), ...r.trials.map((t) => t.trial_no)].join(" ").toLowerCase().includes(q);
   };
@@ -249,8 +243,8 @@ $("list-rows").addEventListener("keydown", (e) => { if (e.key === "Enter") { con
 
 // ───────────────────────────── Report editor ────────────────────────────────
 let E = null; // { report, trials, activity, removed, cur, dirty, ro }
-const blankData = () => ({ bg: "", safety: "", goals: "", deliv: "", crit: "", tests: [{}], samples: [{}], ships: [], disp: {} });
-const newTrial = () => ({ id: null, line: null, line_no: null, lamp_n: 4, planned_date: "", shift: "", duration: "", crew: "", conditions: [{ name: "" }], seq: null, seq_day: null, trial_no: null });
+const blankData = () => ({ bg: "", safety: "", goals: "", deliv: "", crit: "", tests: [{}], samples: [{}], ships: [], disp: {}, after: {} });
+const newTrial = () => ({ id: null, line: null, line_no: null, lamp_n: 4, planned_date: "", shift: "", duration: "", crew: "", run_notes: "", conditions: [{ name: "" }], seq: null, seq_day: null, trial_no: null });
 
 function newReport() {
   if (!canCreate()) return navigate("#/");
@@ -282,32 +276,54 @@ const setDirty = () => { if (!E.dirty) { E.dirty = true; renderSideStatus(); } }
 function renderEditor() {
   showScreen("editor-view");
   E.ro = !canEdit(E.report);
+  E.editable = E.ro ? [] : editableSections(E.report.id ? E.report.status : "draft");
   $("editor-view").classList.toggle("is-readonly", E.ro);
-  renderSideFields(); renderSideStatus(); renderSideNav(); renderHeader(); renderBody(); renderTabs(); renderToolbar();
-  $("comment-form").hidden = !E.report.id || !canComment(E.report);
+  renderSideFields(); renderSideStatus(); renderRoute(); renderSideNav(); renderHeader(); renderBody(); renderTabs(); renderToolbar();
+  $("comment-form").hidden = !E.report.id || !canComment();
   if (!$("activity-panel").hidden) renderActivity();
   lockIfReadonly();
 }
-function lockIfReadonly() {
-  $$("#editor-view .panel-left input, #editor-view .panel-left select, #sheet-body input, #sheet-body select, #sheet-body textarea, #sheet-body .rep-del, #sheet-body .rep-add, #sheet-body .ch button, #sheet-body #btn-add-cond").forEach((el) => (el.disabled = E.ro));
-}
+// Each input carries data-sec (its form section). It's editable only if this
+// step fills in that section and it's your step. Locked buttons are hidden.
+const can = (sec) => !!E?.editable?.includes(sec);
+function lockIfReadonly() { $$("#editor-view [data-sec]").forEach((el) => (el.disabled = !can(el.dataset.sec))); }
 
 const SIDE = [["title", "Report Title", "text", "Required"], ["requester_name", "Requested By", "text", "First and last name"], ["request_date", "Request Date", "date"], ["rd_lead", "R&D Lead", "text"], ["project", "Project / Customer", "text"], ["part_number", "Product / Part Number", "text"]];
 function renderSideFields() {
-  $("side-fields").innerHTML = SIDE.map(([k, l, type, ph]) => `<div class="field" data-field="${k}"><label for="sf-${k}">${l}</label><input id="sf-${k}" type="${type}" data-r="${k}" value="${esc(E.report[k] || "")}" placeholder="${esc(ph || "")}" /></div>`).join("");
+  $("side-fields").innerHTML = SIDE.map(([k, l, type, ph]) => `<div class="field" data-field="${k}"><label for="sf-${k}">${l}</label><input id="sf-${k}" type="${type}" data-r="${k}" data-sec="info" value="${esc(E.report[k] || "")}" placeholder="${esc(ph || "")}" /></div>`).join("");
 }
+const YOUR_STEP = {
+  draft: "Fill in the request: background, goals, trials (line and line number), testing, samples, delivery and disposition.",
+  settings: "Enter the line settings for every condition of every trial.",
+  ops_review: "Review the plan, settings, materials and disposition.",
+  tech_review: "Give final approval to run.",
+  scheduling: "Set the planned date, shift, duration and crew for each trial.",
+  execution: "Run each trial, record run notes and any changes from the approved settings, and pull samples.",
+  testing: "Record test results, ship samples and fill in the after-trial package.",
+};
 function renderSideStatus() {
-  const r = E.report;
+  const r = E.report, st = STEP[r.status];
   const nums = E.trials.map(trialNo);
-  $("side-status").innerHTML = `<div><b>${esc(r.id ? statusLabel(r) : "New report")}</b>${waitingOn(r) && r.id ? ` · waiting on ${esc(waitingOn(r))}` : ""}</div>
+  const mine = r.id && isOwner(r, me);
+  $("side-status").innerHTML = `<div><b>${esc(r.id ? statusLabel(r) : "New report")}</b>${r.id && st ? ` · step ${st.n} of 8` : ""}</div>
+    ${r.id && waitingOn(r) ? `<div>Waiting on ${esc(waitingOn(r))}</div>` : ""}
+    ${(mine || !r.id) && YOUR_STEP[r.status] ? `<div class="your-step"><b>Your step:</b> ${esc(YOUR_STEP[r.status])}</div>` : ""}
     <div class="muted">${nums.map(esc).join("<br>")}</div>
     ${nums.some((n) => n.endsWith("##")) ? `<div class="muted">## is filled in when the report is saved.</div>` : ""}
-    ${E.ro ? `<div class="muted">${r.status === "draft" ? "View only." : "Locked while " + esc(statusLabel(r).toLowerCase()) + "."}</div>` : `<div class="save-state${E.dirty ? " dirty" : ""}">${E.dirty ? "Unsaved changes" : r.id ? "All changes saved" : "Not saved yet"}</div>`}`;
+    ${E.ro ? `<div class="muted">${r.id ? "View only at this step." : ""}</div>` : `<div class="save-state${E.dirty ? " dirty" : ""}">${E.dirty ? "Unsaved changes" : r.id ? "All changes saved" : "Not saved yet"}</div>`}`;
 }
-const SECTIONS = [["bg", "Background"], ["goals", "Trial Goals & Deliverables"], ["trials", "Trials"], ["tests", "Testing After Trial"], ["samples", "Samples Needed"], ["ships", "Sample Delivery"], ["disp", "Material Disposition"], ["sign", "Sign-off"]];
+// The 8 steps with who completed each.
+function renderRoute() {
+  const r = E.report, acks = r.acks || {};
+  $("side-route").innerHTML = STEPS.map((x) => {
+    const done = acks[x.key] || (x.key === "closed" && r.status === "closed"), cur = r.status === x.key && x.key !== "closed";
+    return `<li class="${done ? "done" : ""}${cur ? " current" : ""}"><span class="n">${done ? "✓" : x.n}</span><span class="t">${esc(x.name)}<small>${acks[x.key] ? esc(acks[x.key].name) + " · " + fmtWhen(acks[x.key].at) : esc(x.owner)}</small></span></li>`;
+  }).join("");
+}
+const SECTIONS = [["bg", "Background"], ["goals", "Trial Goals & Deliverables"], ["trials", "Trials"], ["tests", "Testing After Trial"], ["samples", "Samples Needed"], ["ships", "Sample Delivery"], ["disp", "Material Disposition"], ["after", "After-Trial Package"], ["sign", "Route & Sign-offs"]];
 function renderSideNav() {
   const count = { trials: E.trials.length, tests: E.report.data.tests.length, samples: E.report.data.samples.length, ships: E.report.data.ships.length };
-  $("side-nav").innerHTML = SECTIONS.map(([k, l]) => `<a href="#sec-${k}" data-jump="${k}">${l}<small>${count[k] ?? ""}</small></a>`).join("");
+  $("side-nav").innerHTML = SECTIONS.filter(([k]) => k !== "after" || showAfter()).map(([k, l]) => `<a href="#sec-${k}" data-jump="${k}">${l}<small>${count[k] ?? ""}</small></a>`).join("");
 }
 $("side-nav").addEventListener("click", (e) => { const a = e.target.closest("[data-jump]"); if (!a) return; e.preventDefault(); $("sec-" + a.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
 
@@ -317,7 +333,8 @@ function renderHeader() {
     <div class="sheet-divider"></div><span class="l">R&amp;D Pre-Trial Report</span><span class="l">Requested By</span><span class="l">Trial Numbers</span><span class="l">Status</span><span class="l">Request Date</span>`;
 }
 
-const ta = (path, label, ph = "", rows = 3) => `<div class="sheet-block"><label class="sheet-label" for="d-${path}">${label}</label><textarea id="d-${path}" class="sheet-textarea" rows="${rows}" data-d="${path}" placeholder="${esc(ph)}">${esc(getPath(E.report.data, path))}</textarea></div>`;
+const ta = (path, label, ph = "", rows = 3, sec = "bg") => `<div class="sheet-block"><label class="sheet-label" for="d-${path}">${label}</label><textarea id="d-${path}" class="sheet-textarea" rows="${rows}" data-d="${path}" data-sec="${sec}" placeholder="${esc(ph)}">${esc(getPath(E.report.data, path))}</textarea></div>`;
+const showAfter = () => !!E.report.id && stepNo(E.report.status) >= 6;
 const fld = (attrs, label, value, type = "text") => `<div class="field"><label>${label}</label><input type="${type}" ${attrs} value="${esc(value ?? "")}" /></div>`;
 const getPath = (o, p) => p.split(".").reduce((a, k) => a?.[k], o) ?? "";
 const setPath = (o, p, v) => { const ks = p.split("."); let x = o; for (const k of ks.slice(0, -1)) x = x[k] ??= {}; x[ks.at(-1)] = v; };
@@ -329,46 +346,59 @@ function renderBody() {
     ${ta("bg", "Background and history", "", 4)}${ta("safety", "Safety, quality or special handling notes")}</section>
   <section class="sheet-section" id="sec-goals"><h2>Trial Goals &amp; Deliverables</h2><p class="sheet-hint">What success looks like and what will be handed over at the end.</p>
     ${ta("goals", "Trial goals / objectives", "", 4)}${ta("deliv", "Deliverables", "e.g. rolls for customer qualification, data report, process window")}${ta("crit", "Success criteria")}</section>
-  <section class="sheet-section" id="sec-trials"><h2>Trials</h2><p class="sheet-hint">One trial per line run. Pick a trial with the tabs above the report. Each column in the settings table is one condition or material; "Copy" duplicates a column so you only change what differs.</p>
+  <section class="sheet-section" id="sec-trials"><h2>Trials</h2><p class="sheet-hint">One trial per line run. Pick a trial with the tabs above the report. Each column in the settings table is one condition or material; "Copy" duplicates a column so you only change what differs. The requester picks the line and names the conditions; Engineering enters the settings.</p>
     ${E.trials.map((t, i) => `<div class="trial-panel${i === E.cur ? " active" : ""}${t.conditions.length > 4 ? " wide" : ""}" data-panel="${i}"><h3 class="print-only">Trial ${i + 1} · ${esc(trialNo(t))} · ${esc(lineLabel(t))}</h3>${trialPanel(t, i)}</div>`).join("")}</section>
-  <section class="sheet-section" id="sec-tests"><h2>Testing Required After Trial</h2><p class="sheet-hint">Each test, the conditions it applies to and who runs it.</p><div id="rep-tests">${rep("tests")}</div></section>
+  <section class="sheet-section" id="sec-tests"><h2>Testing Required After Trial</h2><p class="sheet-hint">Each test, the conditions it applies to and who runs it. R&amp;D records the results at the Testing step.</p><div id="rep-tests">${rep("tests")}</div></section>
   <section class="sheet-section" id="sec-samples"><h2>Samples Needed</h2><p class="sheet-hint">Number and size of samples to pull from each condition.</p><div id="rep-samples">${rep("samples")}</div></section>
   <section class="sheet-section" id="sec-ships"><h2>Sample Delivery</h2><p class="sheet-hint">A recipient for every location samples must be sent to. Leave empty if samples stay on site.</p><div id="rep-ships">${rep("ships")}</div></section>
   <section class="sheet-section" id="sec-disp"><h2>Material Disposition After Trial</h2><p class="sheet-hint">Default for all trial material. A different choice can be set per condition in the settings table.</p>
-    <div class="disp">${DISP.map((d) => `<label><input type="radio" name="disp-choice" value="${esc(d)}" data-d="disp.choice"${D.disp?.choice === d ? " checked" : ""} />${esc(d)}</label>`).join("")}</div>
-    <div class="sheet-grid">${fld('data-d="disp.loc"', "Hold / storage location", D.disp?.loc)}${fld('data-d="disp.until"', "Hold until", D.disp?.until, "date")}${fld('data-d="disp.label"', "Labeling requirements", D.disp?.label)}${fld('data-d="disp.who"', "Responsible for disposition", D.disp?.who)}</div>
-    ${ta("disp.notes", "Disposition notes")}</section>
-  <section class="sheet-section" id="sec-sign"><h2>Sign-off</h2><p class="sheet-hint">Filled in when each director approves in the app, with their name and the time. No typed signatures.</p>
-    <div class="signs">${signCard("Director of Technology", E.report.sign_tech, E.report.status === "tech_review")}${signCard("Director of Operations", E.report.sign_ops, E.report.status === "ops_review")}</div></section>`;
+    <div class="disp">${DISP.map((d) => `<label><input type="radio" name="disp-choice" value="${esc(d)}" data-d="disp.choice" data-sec="disp"${D.disp?.choice === d ? " checked" : ""} />${esc(d)}</label>`).join("")}</div>
+    <div class="sheet-grid">${fld('data-d="disp.loc" data-sec="disp"', "Hold / storage location", D.disp?.loc)}${fld('data-d="disp.until" data-sec="disp"', "Hold until", D.disp?.until, "date")}${fld('data-d="disp.label" data-sec="disp"', "Labeling requirements", D.disp?.label)}${fld('data-d="disp.who" data-sec="disp"', "Responsible for disposition", D.disp?.who)}</div>
+    ${ta("disp.notes", "Disposition notes", "", 3, "disp")}</section>
+  ${showAfter() ? `<section class="sheet-section" id="sec-after"><h2>After-Trial Package</h2><p class="sheet-hint">Filled in by R&amp;D at the Testing step. Closing the report sends the package to the Director of Technology, the engineer who ran the trial, the Plant Manager and the Director of Operations. Settings as run and test results per trial-condition are in each trial's table; samples shipped are under Sample Delivery.</p>
+    ${ta("after.summary", "After-trial summary: what ran and how it compared with the goals and success criteria", "", 4, "after")}
+    ${ta("after.problems", "Problems on the line", "", 3, "after")}
+    ${ta("after.material", "Where the trial material ended up, against the planned disposition", "", 3, "after")}
+    ${ta("after.next", "Recommendations and next steps", "", 3, "after")}</section>` : ""}
+  <section class="sheet-section" id="sec-sign"><h2>Route &amp; Sign-offs</h2><p class="sheet-hint">Every hand-off is recorded here with the person's name and the time. The two director sign-offs are their approvals in the app; nobody types a signature.</p>
+    <div class="route-cards">${STEPS.filter((x) => x.key !== "closed").map(routeCard).join("")}</div></section>`;
 }
-function signCard(title, s, waiting) {
-  if (!s) return `<div class="sign-card"><h3>${title}</h3><div class="muted">${waiting ? "Waiting for approval." : "Not signed yet."}</div></div>`;
-  return `<div class="sign-card is-signed"><h3>${title} ✓</h3><div class="sig">${esc(s.name)}</div><div class="muted">${esc(s.decision)} · ${fmtWhen(s.at)}</div>${s.comment ? `<div class="cmt">${esc(s.comment)}</div>` : ""}</div>`;
+function routeCard(x) {
+  const r = E.report, a = (r.acks || {})[x.key], sig = x.key === "ops_review" ? r.sign_ops : x.key === "tech_review" ? r.sign_tech : null;
+  const waiting = r.status === x.key;
+  return `<div class="sign-card${a ? " is-signed" : ""}${waiting ? " is-waiting" : ""}"><h3>${x.n}. ${esc(x.name)}${a ? " ✓" : ""}</h3><div class="muted">${esc(x.owner)} · ${esc(x.does)}</div>
+    ${a ? `<div class="sig">${esc(a.name)}</div><div class="muted">${sig ? esc(sig.decision) + " · " : ""}${fmtWhen(a.at)}</div>${a.comment ? `<div class="cmt">${esc(a.comment)}</div>` : ""}` : `<div class="muted">${waiting ? "In progress." : "Not done yet."}</div>`}</div>`;
 }
 function trialPanel(t, i) {
-  return `<div class="line-cards" role="radiogroup" aria-label="Line for trial ${i + 1}">${Object.entries(LINES).map(([k, L]) => `<label class="line-card"><input type="radio" name="line-${i}" value="${k}" data-t="line" data-ti="${i}"${t.line === k ? " checked" : ""} /><span class="check-mark">Selected</span><b>${L.name}</b>${L.sub ? `<small>${L.sub}</small>` : "<small>&nbsp;</small>"}${ART[k]}</label>`).join("")}</div>
+  const run = !!E.report.id && stepNo(E.report.status) >= 6;
+  return `<div class="line-cards" role="radiogroup" aria-label="Line for trial ${i + 1}">${Object.entries(LINES).map(([k, L]) => `<label class="line-card"><input type="radio" name="line-${i}" value="${k}" data-t="line" data-ti="${i}" data-sec="trials"${t.line === k ? " checked" : ""} /><span class="check-mark">Selected</span><b>${L.name}</b>${L.sub ? `<small>${L.sub}</small>` : "<small>&nbsp;</small>"}${ART[k]}</label>`).join("")}</div>
+  ${t.line === "tp" || t.line === "psa" ? `<div class="sheet-grid">
+    ${t.line === "tp" ? `<div class="field${!t.line_no ? " is-missing" : ""}"><label>Line number</label><select data-t="line_no" data-ti="${i}" data-sec="trials"><option value="">choose</option>${["1", "2", "3", "5"].map((o) => `<option${t.line_no === o ? " selected" : ""}>${o}</option>`).join("")}</select></div>` : ""}
+    ${t.line === "psa" ? fld(`data-t="lamp_n" data-ti="${i}" data-sec="settings" inputmode="numeric"`, "UV lamps installed on line", t.lamp_n) : ""}
+  </div>` : ""}
+  <p class="sub-heading">Schedule <small>set by the Plant Manager</small></p>
   <div class="sheet-grid">
-    ${t.line === "tp" ? `<div class="field${!t.line_no ? " is-missing" : ""}"><label>Line number</label><select data-t="line_no" data-ti="${i}"><option value="">choose</option>${["1", "2", "3", "5"].map((o) => `<option${t.line_no === o ? " selected" : ""}>${o}</option>`).join("")}</select></div>` : ""}
-    ${t.line === "psa" ? fld(`data-t="lamp_n" data-ti="${i}" inputmode="numeric"`, "UV lamps installed on line", t.lamp_n) : ""}
-    ${fld(`data-t="planned_date" data-ti="${i}"`, "Planned trial date", t.planned_date, "date")}
-    ${fld(`data-t="shift" data-ti="${i}"`, "Shift / start time", t.shift)}
-    ${fld(`data-t="duration" data-ti="${i}" placeholder="e.g. 4 hours"`, "Estimated duration", t.duration)}
-    ${fld(`data-t="crew" data-ti="${i}"`, "Operators / crew", t.crew)}
+    ${fld(`data-t="planned_date" data-ti="${i}" data-sec="schedule"`, "Planned trial date", t.planned_date, "date")}
+    ${fld(`data-t="shift" data-ti="${i}" data-sec="schedule"`, "Shift / start time", t.shift)}
+    ${fld(`data-t="duration" data-ti="${i}" data-sec="schedule" placeholder="e.g. 4 hours"`, "Estimated duration", t.duration)}
+    ${fld(`data-t="crew" data-ti="${i}" data-sec="schedule"`, "Operators / crew", t.crew)}
   </div>
-  <div class="matrix-bar"><button type="button" class="btn-outline-sm" id="btn-add-cond" data-addcond="${i}"${t.line ? "" : " disabled"}>+ Add Condition</button><span class="hint">Conditions are numbered by trial, e.g. ${esc(trialNo(t).split("-").pop())}-A. Ranges such as 340–360 are fine.</span></div>
-  <div class="mx-scroll" id="mx-${i}">${matrix(t, i)}</div>`;
+  <p class="sub-heading">Conditions and line settings <small>conditions named by the requester, settings entered by Engineering</small></p>
+  <div class="matrix-bar"><button type="button" class="btn-outline-sm" data-addcond="${i}" data-sec="cond"${t.line ? "" : " hidden"}>+ Add Condition</button><span class="hint">Conditions are numbered by trial, e.g. ${esc(trialNo(t).split("-").pop())}-A. Ranges such as 340–360 are fine.</span></div>
+  <div class="mx-scroll" id="mx-${i}">${matrix(t, i)}</div>
+  ${run ? `<div class="sheet-block" style="margin-top:14px"><label class="sheet-label">Run notes: what ran, problems on the line <small class="muted">(Engineering, at Execution)</small></label><textarea class="sheet-textarea" rows="3" data-t="run_notes" data-ti="${i}" data-sec="run">${esc(t.run_notes || "")}</textarea></div>` : ""}`;
 }
 function cell(fd, c, ci, ti) {
   if (fd.t === "calc") return `<span class="calc">${esc(fd.fn(c))}</span>`;
   if (!shown(fd, c)) return '<span class="na">n/a</span>';
-  const v = c[fd.k] ?? "", a = `data-c="${ci}" data-f="${fd.k}" data-ti="${ti}" aria-label="${esc(fd.l)}, condition ${letter(ci)}"`;
+  const v = c[fd.k] ?? "", a = `data-c="${ci}" data-f="${fd.k}" data-ti="${ti}" data-sec="${fd.sec}" aria-label="${esc(fd.l)}, condition ${letter(ci)}"`;
   if (fd.t === "s") return `<select ${a}><option value=""></option>${fd.o.map((o) => `<option${o === v ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
   return `<input ${a} value="${esc(v)}"${fd.t === "n" ? ' inputmode="decimal"' : ""} />`;
 }
 function matrix(t, ti) {
-  const gs = groupsOf(t), n = t.conditions.length;
+  const gs = groupsOf(t, E.report.id ? E.report.status : "draft"), n = t.conditions.length;
   if (!gs.length) return '<p class="mx-empty">Choose a line above to load its stations and settings.</p>';
-  let h = '<table class="mx"><thead><tr><th class="pl">Parameter</th><th class="un">Unit</th>' + t.conditions.map((c, i) => `<th><div class="ch"><span>${letter(i)}</span><button type="button" data-dup="${i}" data-ti="${ti}">Copy</button>${n > 1 ? `<button type="button" data-delc="${i}" data-ti="${ti}" aria-label="Remove condition ${letter(i)}">×</button>` : ""}</div></th>`).join("") + "</tr></thead><tbody>";
+  let h = '<table class="mx"><thead><tr><th class="pl">Parameter</th><th class="un">Unit</th>' + t.conditions.map((c, i) => `<th><div class="ch"><span>${letter(i)}</span><button type="button" data-dup="${i}" data-ti="${ti}" data-sec="cond">Copy</button>${n > 1 ? `<button type="button" data-delc="${i}" data-ti="${ti}" data-sec="cond" aria-label="Remove condition ${letter(i)}">×</button>` : ""}</div></th>`).join("") + "</tr></thead><tbody>";
   for (const [g, fs] of gs) {
     h += `<tr class="gr"><th colspan="${n + 2}"><span>${esc(g)}</span></th></tr>`;
     for (const fd of fs) h += `<tr><th class="pl">${esc(fd.l)}</th><td class="un">${esc(fd.u)}</td>${t.conditions.map((c, i) => `<td>${cell(fd, c, i, ti)}</td>`).join("")}</tr>`;
@@ -376,19 +406,22 @@ function matrix(t, ti) {
   return h + "</tbody></table>";
 }
 function rep(name) {
-  const rows = E.report.data[name];
+  const rows = E.report.data[name], at = E.report.id ? stepNo(E.report.status) : 1;
+  const cols = REP[name].filter(([, , , , from]) => !from || at >= stepNo(from));
   const addLabel = { tests: "+ Add Test", samples: "+ Add Sample Request", ships: "+ Add Recipient" }[name];
-  return (rows.map((r, i) => `<div class="rep-row">${REP[name].map(([k, l, t]) => t === "area"
-    ? `<div class="sheet-block wide" style="margin:0"><label class="sheet-label">${l}</label><textarea class="sheet-textarea" rows="2" data-rep="${name}" data-i="${i}" data-f="${k}">${esc(r[k])}</textarea></div>`
-    : `<div class="field"><label>${l}</label><input type="${t === "date" ? "date" : t === "email" ? "email" : "text"}"${t === "n" ? ' inputmode="numeric"' : ""} data-rep="${name}" data-i="${i}" data-f="${k}" value="${esc(r[k])}" /></div>`).join("")}
-    <button type="button" class="link-btn rep-del" data-repdel="${name}" data-i="${i}">Remove</button></div>`).join("") || `<p class="rep-empty">None added.</p>`) +
-    `<button type="button" class="btn-outline-sm rep-add" data-repadd="${name}">${addLabel}</button>`;
+  return (rows.map((r, i) => `<div class="rep-row">${cols.map(([k, l, t, sec]) => {
+    const a = `data-rep="${name}" data-i="${i}" data-f="${k}" data-sec="${sec || name}"`;
+    return t === "area"
+      ? `<div class="sheet-block wide" style="margin:0"><label class="sheet-label">${l}</label><textarea class="sheet-textarea" rows="2" ${a}>${esc(r[k])}</textarea></div>`
+      : `<div class="field"><label>${l}</label><input type="${t === "date" ? "date" : t === "email" ? "email" : "text"}"${t === "n" ? ' inputmode="numeric"' : ""} ${a} value="${esc(r[k])}" /></div>`;
+  }).join("")}
+    <button type="button" class="link-btn rep-del" data-repdel="${name}" data-i="${i}" data-sec="${name}">Remove</button></div>`).join("") || `<p class="rep-empty">None added.</p>`) +
+    `<button type="button" class="btn-outline-sm rep-add" data-repadd="${name}" data-sec="${name}">${addLabel}</button>`;
 }
 function renderTabs() {
-  const ro = E.ro;
   $("trial-tabs").innerHTML = E.trials.map((t, i) => `<button type="button" class="load-pattern-tab${i === E.cur ? " active" : ""}" data-tab="${i}" aria-pressed="${i === E.cur}">Trial ${i + 1}<small>${esc(trialNo(t))}</small></button>`).join("") +
-    (ro ? "" : `<button type="button" class="btn-outline-sm load-pattern-add" id="btn-add-trial"><span class="docs-new-plus">+</span> Add Trial</button>`) +
-    (!ro && E.trials.length > 1 ? `<button type="button" class="load-pattern-remove-btn" id="btn-del-trial">Remove Trial ${E.cur + 1}</button>` : "");
+    (can("trials") ? `<button type="button" class="btn-outline-sm load-pattern-add" id="btn-add-trial"><span class="docs-new-plus">+</span> Add Trial</button>` : "") +
+    (can("trials") && E.trials.length > 1 ? `<button type="button" class="load-pattern-remove-btn" id="btn-del-trial">Remove Trial ${E.cur + 1}</button>` : "");
 }
 function refreshNumbers() { renderTabs(); renderHeader(); renderSideStatus(); }
 function renderTrialPanel(i) {
@@ -409,7 +442,7 @@ const ICON_ACT = '<svg viewBox="0 0 16 16" fill="none"><path d="M3.73 13.28l1.02
 const mainActions = (r) => actionsFor(r).filter((a) => a.action !== "cancel");
 function renderToolbar() {
   const r = E.report, acts = mainActions(r), cancel = actionsFor(r).find((a) => a.action === "cancel");
-  const statusBtnLabel = acts.length === 1 ? acts[0].label : acts.length > 1 ? statusLabel(r) + " ▾" : r.id ? statusLabel(r) : "Submit for Approval";
+  const statusBtnLabel = acts.length === 1 ? acts[0].label : acts.length > 1 ? acts[0].label + " ▾" : r.id ? statusLabel(r) : STEP.draft.advance;
   const comments = E.activity.filter((a) => a.kind === "comment").length;
   $("toolbar").innerHTML = `
     ${E.ro ? "" : `<button type="button" class="btn-outline-sm" id="btn-save">${ICON_SAVE} Save</button>`}
@@ -426,11 +459,21 @@ function renderToolbar() {
 }
 
 // Validation shared by Save and Submit (the database checks the same on submit).
-function missingForSubmit() {
+// Checked before each hand-off (the database checks the same).
+function missingForStep(status) {
   const m = [];
-  if (!E.report.title.trim()) m.push("Report Title");
-  if (!E.report.requester_name.trim()) m.push("Requested By");
-  E.trials.forEach((t, i) => { if (!t.line) m.push(`Trial ${i + 1}: line`); else if (t.line === "tp" && !t.line_no) m.push(`Trial ${i + 1}: line number`); });
+  if (status === "draft") {
+    if (!E.report.title.trim()) m.push("Report Title");
+    if (!E.report.requester_name.trim()) m.push("Requested By");
+    E.trials.forEach((t, i) => { if (!t.line) m.push(`Trial ${i + 1}: line`); else if (t.line === "tp" && !t.line_no) m.push(`Trial ${i + 1}: line number`); });
+  } else if (status === "settings") {
+    const skip = ["name", "mat", "run", "disp", "note", "asrun", "result"];
+    E.trials.forEach((t, i) => t.conditions.forEach((c, ci) => {
+      if (!Object.entries(c).some(([k, v]) => !skip.includes(k) && String(v ?? "").trim())) m.push(`Trial ${i + 1}, condition ${letter(ci)}: line settings`);
+    }));
+  } else if (status === "scheduling") {
+    E.trials.forEach((t, i) => { if (!t.planned_date) m.push(`Trial ${i + 1}: planned trial date`); });
+  }
   return m;
 }
 function markMissing() {
@@ -453,9 +496,9 @@ async function save(updateUrl = true) {
 }
 async function runAction(a) {
   const r = E.report;
-  if (a.action === "submit") {
-    const miss = missingForSubmit();
-    if (miss.length) { markMissing(); await dialog({ message: "Fill these in before submitting:\n• " + miss.join("\n• "), buttons: [{ label: "OK", value: true, primary: true }] }); return; }
+  if (a.action === "advance") {
+    const miss = missingForStep(r.status);
+    if (miss.length) { markMissing(); await dialog({ message: "Fill these in first:\n• " + miss.slice(0, 12).join("\n• ") + (miss.length > 12 ? `\n…and ${miss.length - 12} more` : ""), buttons: [{ label: "OK", value: true, primary: true }] }); return; }
   }
   const res = a.comment
     ? await dialog({ message: a.msg, input: { required: a.comment === "required", placeholder: a.comment === "required" ? "Comment (required)" : "Comment (optional)" }, buttons: [{ label: "Cancel", value: null }, { label: a.label, value: true, primary: true }] })
@@ -463,9 +506,8 @@ async function runAction(a) {
   if (!res) return;
   if (E.dirty && !(await save())) return;
   try {
-    await api.transition(r.id, a.action, res.text || "");
-    const who = { submit: "The Director of Technology has been emailed.", approve: r.status === "tech_review" ? "The Director of Operations has been emailed." : "The author and spectators have been emailed.", send_back: "They've been emailed.", reopen: "The author has been emailed." }[a.action] || "";
-    toast(`${a.label} — done. ${DEMO ? "" : who}`);
+    await api.transition(r.id, a.action, res.text || "", a.target || "previous");
+    toast(`${a.label} — done.${DEMO ? "" : " The next person has been emailed."}`);
     await openReport(r.id, true);
   } catch (e) { toast(e.message, true); }
 }
@@ -516,7 +558,7 @@ document.addEventListener("click", async (e) => {
   else if (b.id === "btn-save") save();
   else if (b.id === "btn-status") {
     const acts = mainActions(E.report);
-    if (!E.report.id) { if (await save()) { const a = actionsFor(E.report).find((x) => x.action === "submit"); if (a) runAction(a); } return; }
+    if (!E.report.id) { if (await save()) { const a = actionsFor(E.report).find((x) => x.action === "advance"); if (a) runAction(a); } return; }
     if (acts.length === 1) return runAction(acts[0]);
     const m = $("status-menu"); m.innerHTML = acts.map((a, i) => `<button type="button" class="hamburger-menu-item" data-acti="${i}">${esc(a.label)}</button>`).join(""); m.hidden = !m.hidden;
   }
@@ -535,19 +577,21 @@ document.addEventListener("click", async (e) => {
 });
 function duplicate() {
   const src = E;
-  E = { report: { ...src.report, id: null, status: "draft", last_action: null, sign_tech: null, sign_ops: null, submitted_at: null, created_by: me.id, title: (src.report.title || "") + " (copy)", request_date: today(), requester_name: me.role === "requester" ? me.name : src.report.requester_name, data: JSON.parse(JSON.stringify(src.report.data)) },
-    trials: src.trials.map((t) => ({ ...newTrial(), line: t.line, line_no: t.line_no, lamp_n: t.lamp_n, shift: t.shift, duration: t.duration, crew: t.crew, conditions: JSON.parse(JSON.stringify(t.conditions)) })), activity: [], removed: [], cur: 0, dirty: true };
+  E = { report: { ...src.report, id: null, status: "draft", last_action: null, sign_tech: null, sign_ops: null, acks: {}, submitted_at: null, created_by: me.id, title: (src.report.title || "") + " (copy)", request_date: today(), requester_name: me.role === "requester" ? me.name : src.report.requester_name, data: { ...JSON.parse(JSON.stringify(src.report.data)), after: {}, tests: src.report.data.tests.map(({ result, ...t }) => t), ships: src.report.data.ships.map(({ shipped, ...x }) => x) } },
+    trials: src.trials.map((t) => ({ ...newTrial(), line: t.line, line_no: t.line_no, lamp_n: t.lamp_n, shift: t.shift, duration: t.duration, crew: t.crew, conditions: t.conditions.map(({ asrun, result, ...c }) => ({ ...c })) })), activity: [], removed: [], cur: 0, dirty: true };
   setHashSilently("#/new");
   renderEditor(); toast("Copied into a new draft. Save it to get new trial numbers.");
 }
 
 // ───────────────────────────── Activity panel ───────────────────────────────
-const EVENT_TITLES = { created: "Created the report", submit: "Submitted for approval", approved_tech: "Approved — Director of Technology", approved_ops: "Final approval — Director of Operations. Ready to run.", send_back: "Sent back", recall: "Recalled the submission", reopen: "Reopened for edits", complete: "Marked the trial completed", cancel: "Cancelled the report" };
+const ADVANCED = { draft: "Sent the request to Engineering", settings: "Entered the line settings – sent to the Director of Operations", ops_review: "Approved (Operations) – sent to the Director of Technology", tech_review: "Final approval – sent to the Plant Manager", scheduling: "Scheduled the trials – sent to Engineering", execution: "Ran the trials – sent to R&D", testing: "Closed – after-trial package sent" };
+const EVENT_TITLES = { created: "Created the report", cancel: "Cancelled the report", submit: "Submitted for approval", approved_tech: "Approved — Director of Technology", approved_ops: "Approved — Director of Operations", recall: "Recalled the submission", reopen: "Reopened for edits", complete: "Marked the trial completed" };
+const eventTitle = (a) => (a.kind === "advance" ? ADVANCED[a.from_status] || "Handed off" : a.kind === "send_back" ? `Sent back to ${a.to_status === "draft" ? "the requester" : STEP[a.to_status]?.owner || a.to_status}` : EVENT_TITLES[a.kind] || a.kind);
 function renderActivity() {
   const items = [...E.activity].reverse();
   $("activity-list").innerHTML = items.map((a) => a.kind === "comment"
     ? `<div class="comment-item"><div class="comment-item-meta">${esc(a.actor_name)} · ${fmtWhen(a.at)}</div><div class="comment-item-body">${esc(a.body)}</div></div>`
-    : `<div class="comment-item comment-event comment-event-${esc(a.kind)}"><div class="comment-item-meta">${esc(a.actor_name)} · ${fmtWhen(a.at)}</div><div class="comment-event-title">${esc(EVENT_TITLES[a.kind] || a.kind)}</div>${a.body ? `<div class="comment-item-body">${esc(a.body)}</div>` : ""}</div>`).join("") || `<p class="activity-empty">No activity yet.</p>`;
+    : `<div class="comment-item comment-event comment-event-${esc(a.kind === "advance" ? (["ops_review", "tech_review"].includes(a.from_status) ? "approved_ops" : "advance") : a.kind)}"><div class="comment-item-meta">${esc(a.actor_name)} · ${fmtWhen(a.at)}</div><div class="comment-event-title">${esc(eventTitle(a))}</div>${a.body ? `<div class="comment-item-body">${esc(a.body)}</div>` : ""}</div>`).join("") || `<p class="activity-empty">No activity yet.</p>`;
 }
 $("btn-activity-close").addEventListener("click", () => ($("activity-panel").hidden = true));
 $("comment-form").addEventListener("submit", async (e) => {
@@ -570,10 +614,10 @@ function reportText() {
   E.trials.forEach((t) => {
     const no = trialNo(t);
     o.push("", "TRIAL " + no + " – " + lineLabel(t));
-    ln("Planned date", t.planned_date); ln("Shift / start", t.shift); ln("Duration", t.duration); ln("Crew", t.crew);
+    ln("Planned date", t.planned_date); ln("Shift / start", t.shift); ln("Duration", t.duration); ln("Crew", t.crew); ln("Run notes", t.run_notes);
     if (LINES[t.line]) t.conditions.forEach((c, i) => {
       o.push("", `Condition ${no.split("-").pop()}-${letter(i)}${c.name ? " – " + c.name : ""}`);
-      for (const [g, fs] of groupsOf(t)) { const r = fs.filter((fd) => fd.k !== "name" && shown(fd, c) && val(fd, c)).map((fd) => `    ${fd.l}: ${val(fd, c)}${fd.u && fd.t !== "s" && fd.t !== "x" ? " " + fd.u : ""}`); if (r.length) o.push("  " + g, ...r); }
+      for (const [g, fs] of groupsOf(t, R.status)) { const r = fs.filter((fd) => fd.k !== "name" && shown(fd, c) && val(fd, c)).map((fd) => `    ${fd.l}: ${val(fd, c)}${fd.u && fd.t !== "s" && fd.t !== "x" ? " " + fd.u : ""}`); if (r.length) o.push("  " + g, ...r); }
     });
   });
   const rl = (h, name, fmt) => { const rs = I[name].filter((r) => Object.values(r).some(Boolean)); if (rs.length) { o.push("", h.toUpperCase()); rs.forEach((r, i) => o.push(`${i + 1}. ` + fmt(r))); } };
@@ -581,8 +625,10 @@ function reportText() {
   rl("Samples needed", "samples", (r) => [r.n && r.n + " samples", r.size, r.conds && "from " + r.conds, r.use && "for " + r.use].filter(Boolean).join(", "));
   rl("Sample delivery", "ships", (r) => [r.name, r.email, r.n && r.n + " samples", r.size, r.conds && "conditions " + r.conds, r.how, r.addr && "\n   Address: " + r.addr.replace(/\n/g, ", ")].filter(Boolean).join(" | "));
   const D = I.disp || {}; if (Object.values(D).some(Boolean)) { o.push("", "MATERIAL DISPOSITION"); ln("Default", D.choice); ln("Hold location", D.loc); ln("Hold until", D.until); ln("Labeling", D.label); ln("Responsible", D.who); ln("Notes", D.notes); }
-  o.push("", "SIGN-OFF");
-  [["Director of Technology", R.sign_tech], ["Director of Operations", R.sign_ops]].forEach(([role, s]) => o.push(s ? `${role}: ${s.name} — ${s.decision}, ${fmtWhen(s.at)}${s.comment ? "\n   Comments: " + s.comment : ""}` : `${role}: not signed yet`));
+  const A = I.after || {};
+  if (Object.values(A).some(Boolean)) { o.push("", "AFTER-TRIAL PACKAGE"); ln("Summary", A.summary); ln("Problems on the line", A.problems); ln("Material ended up", A.material); ln("Recommendations / next steps", A.next); }
+  o.push("", "ROUTE AND SIGN-OFFS");
+  STEPS.filter((x) => x.key !== "closed").forEach((x) => { const a = (R.acks || {})[x.key]; o.push(`${x.n}. ${x.name} (${x.owner}): ${a ? `${a.name}, ${fmtWhen(a.at)}${a.comment ? " — " + a.comment : ""}` : "not done yet"}`); });
   return o.join("\n");
 }
 function tsv() {
@@ -592,7 +638,7 @@ function tsv() {
     if (ti) rows.push([]);
     rows.push(["Trial " + no, lineLabel(t)]);
     rows.push(["Parameter", "Unit", ...t.conditions.map((c, i) => "Condition " + no.split("-").pop() + "-" + letter(i))]);
-    for (const [g, fs] of groupsOf(t)) { rows.push([g]); for (const fd of fs) rows.push([fd.l, fd.u, ...t.conditions.map((c) => (shown(fd, c) ? cl(val(fd, c)) : "n/a"))]); }
+    for (const [g, fs] of groupsOf(t, E.report.status)) { rows.push([g]); for (const fd of fs) rows.push([fd.l, fd.u, ...t.conditions.map((c) => (shown(fd, c) ? cl(val(fd, c)) : "n/a"))]); }
   });
   return rows.map((r) => r.join("\t")).join("\n");
 }

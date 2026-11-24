@@ -58,19 +58,37 @@ export const LINES = {
 
 const HEAD = ["Condition", [f("name", "Condition name", "", "x"), f("mat", "Material / product", "", "x"), f("run", "Planned quantity", "ft, rolls or panels", "x")]];
 const TAIL = ["After trial", [f("disp", "Disposition", "", "s", ["Per disposition section", ...DISP]), f("note", "Condition notes", "", "x")]];
+const ASRUN = ["As run", [f("asrun", "Changes from approved settings", "", "x")]];
+const RESULTS = ["Test results", [f("result", "Results", "", "x")]];
+const STEP_ORDER = ["draft", "settings", "ops_review", "tech_review", "scheduling", "execution", "testing", "closed"];
+const tag = ([g, fs], sec) => [g, fs.map((fd) => ({ ...fd, sec: typeof sec === "function" ? sec(fd) : sec }))];
 
-export const groupsOf = (t) => (LINES[t.line] ? [HEAD, ...LINES[t.line].groups(t), TAIL] : []);
+// Groups for a trial's settings table. Each field carries the form section
+// it belongs to, so the app knows which step fills it in. "As run" appears
+// from Execution on, "Test results" from Testing on.
+export const groupsOf = (t, status = "draft") => {
+  if (!LINES[t.line]) return [];
+  const at = STEP_ORDER.indexOf(status);
+  return [
+    tag(HEAD, "cond"),
+    ...LINES[t.line].groups(t).map((g) => tag(g, "settings")),
+    tag(TAIL, (fd) => (fd.k === "disp" ? "plan_disp" : "run")),
+    ...(at >= 5 ? [tag(ASRUN, "run")] : []),
+    ...(at >= 6 ? [tag(RESULTS, "results")] : []),
+  ];
+};
 export const shown = (fd, c) => !fd.iff || c[fd.iff[0]] === fd.iff[1];
 export const letter = (i) => String.fromCharCode(65 + i);
 export const lineCode = (t) => (t.line === "tp" ? "TG" + (t.line_no || "?") : LINES[t.line]?.code || "??");
 export const lineLabel = (t) => (LINES[t.line] ? LINES[t.line].name + (t.line === "tp" && t.line_no ? ", Line " + t.line_no : "") : "Line not chosen");
 export const lineShort = (t) => (t.line === "tp" ? "Ty-Gard L" + (t.line_no || "?") : t.line === "psa" ? "PSA L7" : t.line === "sg" ? "Shock-Gard" : "—");
 
-// Repeating sections: [key, label, type]
+// Repeating sections: [key, label, type, section, shown from step]
+// Planned in Draft; results and ship dates filled in at Testing.
 export const REP = {
-  tests: [["test", "Test", "x"], ["method", "Method / standard", "x"], ["conds", "Trial-condition(s), e.g. 01-A", "x"], ["n", "Samples per condition", "n"], ["who", "Lab / responsible", "x"], ["due", "Results due", "date"]],
+  tests: [["test", "Test", "x"], ["method", "Method / standard", "x"], ["conds", "Trial-condition(s), e.g. 01-A", "x"], ["n", "Samples per condition", "n"], ["who", "Lab / responsible", "x"], ["due", "Results due", "date"], ["result", "Result", "area", "results", "testing"]],
   samples: [["conds", "Trial-condition(s), e.g. 01-A", "x"], ["n", "Number of samples", "n"], ["size", "Sample size", "x"], ["use", "Purpose / test", "x"]],
-  ships: [["name", "Recipient name", "x"], ["email", "Email", "email"], ["n", "Number of samples", "n"], ["size", "Sample size", "x"], ["conds", "Trial-condition(s), e.g. 01-A", "x"], ["how", "Ship method / notes", "x"], ["addr", "Shipping address", "area"]],
+  ships: [["name", "Recipient name", "x"], ["email", "Email", "email"], ["n", "Number of samples", "n"], ["size", "Sample size", "x"], ["conds", "Trial-condition(s), e.g. 01-A", "x"], ["how", "Ship method / notes", "x"], ["shipped", "Date shipped", "date", "shipped", "testing"], ["addr", "Shipping address", "area"]],
 };
 
 // Line schematics (ink drawings; --glue = adhesive, --uv = UV light, --bg = card).

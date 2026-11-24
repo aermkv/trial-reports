@@ -25,11 +25,11 @@ function readRedirectError() {
 }
 const redirectError = readRedirectError();
 
-const TRIAL_COLS = "id, report_id, position, line, line_no, lamp_n, planned_date, shift, duration, crew, conditions, seq, trial_no";
+const TRIAL_COLS = "id, report_id, position, line, line_no, lamp_n, planned_date, shift, duration, crew, run_notes, conditions, seq, seq_day, trial_no";
 const trialRow = (t, reportId, position) => ({
   report_id: reportId, position, line: t.line || null, line_no: t.line === "tp" ? t.line_no || null : null,
   lamp_n: +t.lamp_n || 4, planned_date: t.planned_date || null, shift: t.shift || "", duration: t.duration || "",
-  crew: t.crew || "", conditions: t.conditions?.length ? t.conditions : [{ name: "" }],
+  crew: t.crew || "", run_notes: t.run_notes || "", conditions: t.conditions?.length ? t.conditions : [{ name: "" }],
 });
 const reportRow = (r) => ({
   title: r.title || "", requester_name: r.requester_name || "", request_date: r.request_date,
@@ -101,8 +101,8 @@ export const api = {
     }
     return this.getReport(id);
   },
-  async transition(id, action, comment = "") {
-    const { error } = await supabase.rpc("tr_transition", { p_report: id, p_action: action, p_comment: comment });
+  async transition(id, action, comment = "", target = "previous") {
+    const { error } = await supabase.rpc("tr_transition", { p_report: id, p_action: action, p_comment: comment, p_target: target });
     fail(error);
     this.notify(id, action, comment);
   },

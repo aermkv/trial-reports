@@ -125,11 +125,31 @@ html, body { margin: 0; height: 100%; font-family: inherit; color: var(--ink); b
 .panel-right > * { width: 100%; max-width: 1180px; }
 /* Locked reports: the sidebar greys out like the LDT's read-only editor, but
    the sheet stays crisp so it reads like the finished document. */
-#editor-view.is-readonly .panel-left .field-group-tight { opacity: .45; filter: grayscale(1); user-select: none; }
-#editor-view.is-readonly .sheet-body :is(input, select, textarea):disabled { color: var(--ink); -webkit-text-fill-color: var(--ink); opacity: 1; appearance: none; background: transparent; }
-#editor-view.is-readonly .sheet-body .mx td :is(input, select) { border-bottom-color: transparent; }
-#editor-view.is-readonly :is(.rep-add, .rep-del, .ch button, .matrix-bar, .rep-empty) { display: none !important; }
-#editor-view.is-readonly .line-card:not(:has(input:checked)) { opacity: .35; }
+#editor-view .panel-left .field:has(input:disabled) { opacity: .5; }
+/* Fields another step fills in read like the finished document; only your
+   step's fields look editable. Buttons you can't use are hidden. */
+.sheet-body :is(input, select, textarea):disabled { color: var(--ink); -webkit-text-fill-color: var(--ink); opacity: 1; appearance: none; -webkit-appearance: none; background: transparent; cursor: default; }
+.sheet-body .mx td :is(input, select):disabled { border-bottom-color: transparent; }
+.sheet-body .sheet-textarea:disabled { border-color: #c9c9c9; }
+.sheet-body .field:has(:disabled) { border-bottom-color: #c9c9c9; }
+#editor-view button[data-sec]:disabled { display: none !important; }
+.matrix-bar:not(:has(button:enabled)) { display: none; }
+.line-cards:has(input:disabled) .line-card:not(:has(input:checked)) { opacity: .35; }
+.sub-heading { margin: 16px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.sub-heading small { margin-left: 6px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-soft); }
+.your-step { margin: 6px 0; padding: 6px 8px; border-left: 3px solid var(--ink); background: #fff; font-size: 12px; line-height: 1.4; }
+.side-route { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.side-route li { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; border-bottom: 1px solid #d6d2ca; font-size: 13px; }
+.side-route .n { flex: 0 0 20px; height: 20px; border: 1.5px solid var(--ink-soft); border-radius: 50%; display: grid; place-items: center; font-size: 11px; color: var(--ink-soft); }
+.side-route .t { display: flex; flex-direction: column; }
+.side-route small { font-size: 11px; color: var(--ink-soft); }
+.side-route li.done .n { background: var(--ok); border-color: var(--ok); color: #fff; }
+.side-route li.current { font-weight: 700; }
+.side-route li.current .n { background: var(--ink); border-color: var(--ink); color: #fff; }
+.route-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+.route-cards .sign-card { border-width: 1px; padding: 10px 12px; gap: 3px; }
+.route-cards .sign-card .sig { font-size: 15px; }
+.sign-card.is-waiting { border: 2px solid var(--ink); }
 
 /* LDT underlined fields */
 .field-group-tight, .field-group { display: flex; flex-direction: column; gap: 8px; }
@@ -369,7 +389,11 @@ table.mx { border-collapse: separate; border-spacing: 0; width: 100%; font-size:
   .disp label { padding: 3pt 6pt; font-size: 8pt; border-width: 1px; }
   .disp label:not(:has(input:checked)) { color: #888; border-color: #ccc; }
   .disp label:has(input:checked) { padding: 3pt 6pt; }
-  .signs { grid-template-columns: 1fr 1fr; gap: 10pt; break-inside: avoid; }
+  .signs, .route-cards { grid-template-columns: 1fr 1fr 1fr; gap: 6pt; break-inside: avoid; }
+  .route-cards .sign-card { padding: 5pt 7pt; }
+  .route-cards .sign-card .sig { font-size: 10pt; }
+  .sub-heading { font-size: 8pt; margin: 8pt 0 4pt; }
+  #sec-after { break-before: page; }
   .sign-card { padding: 8pt 10pt; border-width: 1px; }
   .sign-card .sig { font-size: 13pt; }
   #sec-sign { break-inside: avoid; }

@@ -6,14 +6,24 @@
 import { admin, caller, cors, esc, json, sendEmail } from "../_shared/common.ts";
 
 const STATUS: Record<string, string> = {
-  draft: "Draft", tech_review: "Pending Technology Approval", ops_review: "Pending Operations Approval",
-  approved: "Approved", completed: "Completed", cancelled: "Cancelled",
+  draft: "Draft", settings: "Settings Entry", ops_review: "Operations Review", tech_review: "Final Approval",
+  scheduling: "Scheduling", execution: "Execution", testing: "Testing", closed: "Closed", cancelled: "Cancelled",
 };
-const WHAT: Record<string, string> = {
-  submit: "submitted a trial report for approval", approved_tech: "approved a trial report (Director of Technology)",
-  approved_ops: "gave final approval to a trial report", send_back: "sent back a trial report", recall: "recalled a trial report",
-  reopen: "reopened a trial report for edits", complete: "marked a trial report completed", cancel: "cancelled a trial report",
-  comment: "commented on a trial report",
+const ADVANCED: Record<string, string> = {
+  draft: "sent a trial request to Engineering for settings", settings: "entered the line settings and sent the report for Operations review",
+  ops_review: "approved the report (Operations) and sent it for final approval", tech_review: "gave final approval; the trials are ready to schedule",
+  scheduling: "scheduled the trials", execution: "ran the trials and sent the report to R&D for testing", testing: "closed the report. Here is the after-trial package",
+};
+// Owner roles of each step (author = the report's requester).
+const OWNERS: Record<string, string[]> = {
+  draft: ["author"], settings: ["engineer"], ops_review: ["ops_director"], tech_review: ["tech_director"],
+  scheduling: ["plant_manager"], execution: ["engineer"], testing: ["author", "requester"],
+};
+
+const afterPackage = (a: Record<string, string>) => {
+  const row = (l: string, v?: string) => (v ? `<p style="margin:8px 0 0"><b>${esc(l)}</b><br><span style="white-space:pre-wrap">${esc(v)}</span></p>` : "");
+  return `<div style="border-top:1px solid #ccc;margin-top:12px;padding-top:4px">${row("After-trial summary", a.summary)}${row("Problems on the line", a.problems)}${row("Where the trial material ended up", a.material)}${row("Recommendations and next steps", a.next)}
+    <p style="color:#666">The full package (settings as run and test results for each trial-condition, samples shipped and both sign-offs) is in the report. Use Print / PDF there for a copy.</p></div>`;
 };
 
 Deno.serve(async (req) => {
@@ -36,18 +46,14 @@ Deno.serve(async (req) => {
 
     let to: { email: string; user_id: string }[] = [];
     const s = report.status, k = last.kind;
-    if (k === "submit") to = byRole("tech_director");
-    else if (k === "approved_tech") to = byRole("ops_director");
-    else if (k === "approved_ops") to = [...byId(report.created_by), ...byRole("spectator", "engineer")];
-    else if (k === "send_back") to = s === "draft" ? byId(report.created_by) : byRole("tech_director");
-    else if (k === "recall") to = s === "draft" ? byRole("tech_director") : byRole("ops_director");
-    else if (k === "reopen") to = [...byId(report.created_by), ...byRole("ops_director")];
-    else if (k === "complete") to = [...byRole("tech_director", "ops_director", "spectator")];
-    else if (k === "cancel") to = byRole("tech_director", "ops_director");
-    else if (k === "comment") {
-      const turn = { draft: [] as string[], tech_review: ["tech_director"], ops_review: ["ops_director"], approved: ["engineer"] }[s as "draft"] || [];
-      to = [...byId(report.created_by), ...byRole(...turn)];
-    }
+    const ownersOf = (step: string) => (OWNERS[step] || []).flatMap((r) => (r === "author" ? byId(report.created_by) : byRole(r)));
+    if (k === "advance" && s === "closed") {
+      // After-trial package: Technology, the engineer who ran it, Plant Manager, Operations (and the requester).
+      const ranBy = report.acks?.execution?.user;
+      to = [...byRole("tech_director", "plant_manager", "ops_director"), ...(ranBy ? byId(ranBy) : byRole("engineer")), ...byId(report.created_by)];
+    } else if (k === "advance" || k === "send_back") to = ownersOf(s);
+    else if (k === "cancel") to = [...byId(report.created_by), ...ownersOf(last.from_status)];
+    else if (k === "comment") to = [...byId(report.created_by), ...ownersOf(s)];
     const emails = [...new Set(to.filter((m) => m.user_id !== user.id).map((m) => m.email))];
     if (!emails.length) return json({ sent: 0 });
 
@@ -55,7 +61,9 @@ Deno.serve(async (req) => {
     const nums = (trials || []).map((t) => t.trial_no).join(", ");
     const subject = `${STATUS[s] || s}: ${report.title || "Trial report"}${nums ? ` (${nums})` : ""}`;
     const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#202020;line-height:1.5">
-      <p><b>${esc(last.actor_name)}</b> ${esc(WHAT[k] || k)}.</p>
+      <p><b>${esc(last.actor_name)}</b> ${esc(k === "advance" ? ADVANCED[last.from_status] || "handed off a trial report" : k === "send_back" ? `sent a trial report back to ${s === "draft" ? "the requester" : STATUS[s]}` : k === "cancel" ? "cancelled a trial report" : "commented on a trial report")}.</p>
+      ${(k === "advance" || k === "send_back") && s !== "closed" ? `<p>It's now at <b>${esc(STATUS[s])}</b> and waiting on you.</p>` : ""}
+      ${s === "closed" && k === "advance" ? afterPackage(report.data?.after || {}) : ""}
       <p style="margin:0"><b>${esc(report.title)}</b><br>${esc(nums)}<br>Requested by ${esc(report.requester_name)} · Status: ${esc(STATUS[s] || s)}</p>
       ${last.body ? `<p style="border-left:3px solid #888;padding-left:10px;white-space:pre-wrap">${esc(last.body)}</p>` : ""}
       <p><a href="${esc(link)}" style="color:#202020">Open the report</a></p></div>`;
