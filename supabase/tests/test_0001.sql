@@ -27,7 +27,9 @@ set role authenticated;
 -- Joe (engineer) creates a report with 3 trials
 select pg_temp.as_user('b');
 insert into tr_reports(id,title,requester_name,request_date) values
- ('11111111-1111-1111-1111-111111111111','PET film coating trial','Joe Meckler','2026-11-24');
+ ('11111111-1111-1111-1111-111111111111','PET film coating trial','Joe Meckler','2026-11-24') returning id;
+-- what the app does: insert and read the id back (failed before 0003)
+insert into tr_reports(title,requester_name) values ('Returning test','Rita Requester') returning title;
 insert into tr_trials(report_id,position,line,line_no) values
  ('11111111-1111-1111-1111-111111111111',0,'tp','2'),
  ('11111111-1111-1111-1111-111111111111',1,'tp','5'),
@@ -37,7 +39,7 @@ select position, trial_no from tr_trials where report_id='11111111-1111-1111-111
 -- Rita (requester) makes a separate report the same day -> next number
 select pg_temp.as_user('e');
 insert into tr_reports(id,title,requester_name,request_date) values
- ('22222222-2222-2222-2222-222222222222','Shock-Gard riser trial','Rita Requester','2026-11-24');
+ ('22222222-2222-2222-2222-222222222222','Shock-Gard riser trial','Rita Requester','2026-11-24') returning id;
 insert into tr_trials(report_id,line) values ('22222222-2222-2222-2222-222222222222','sg');
 select trial_no from tr_trials where report_id='22222222-2222-2222-2222-222222222222';
 -- a requester can't see Joe's draft

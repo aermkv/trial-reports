@@ -266,7 +266,11 @@ create policy tr_members_read on public.tr_members for select to authenticated
 
 drop policy if exists tr_reports_read on public.tr_reports;
 create policy tr_reports_read on public.tr_reports for select to authenticated
-  using (public.tr_can_see(id));
+  using (
+    public.tr_role() in ('engineer','tech_director','ops_director','admin','spectator')
+    or created_by = auth.uid()
+    or (public.tr_role() = 'requester' and status in ('approved','completed'))
+  );
 drop policy if exists tr_reports_insert on public.tr_reports;
 create policy tr_reports_insert on public.tr_reports for insert to authenticated
   with check (created_by = auth.uid()

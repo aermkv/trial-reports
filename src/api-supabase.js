@@ -125,7 +125,19 @@ export const api = {
     const { error } = await supabase.rpc("tr_set_member", { p_user: userId, p_role: role, p_active: active, p_name: name ?? null });
     fail(error);
   },
-  async inviteMember(email, name, role) { return callFn("trial-invite", { email, name, role }, "Could not add this person."); },
+  // Existing accounts (anyone who uses the Load Diagram Tool) are added by a
+  // database function. Only brand-new people go through the invite email.
+  async inviteMember(email, name, role) {
+    const { data, error } = await supabase.rpc("tr_add_member", { p_email: email, p_name: name, p_role: role });
+    fail(error);
+    if (data?.found) return { restored: data.restored };
+    try { return await callFn("trial-invite", { email, name, role }, "Could not invite this person."); }
+    catch (e) {
+      if (/failed to fetch|load failed|networkerror/i.test(e.message))
+        throw new Error("That email has no account yet, and email invitations aren't switched on (the trial-invite function isn't deployed). Invite them in the Load Diagram Tool first, or deploy the function.");
+      throw e;
+    }
+  },
   // Emails are best-effort, like the LDT: a failed email never blocks the action.
   notify(id, event, comment) { callFn("trial-notify", { reportId: id, event, comment, appUrl: cleanUrl() }).catch((e) => console.warn("email", e)); },
 };
